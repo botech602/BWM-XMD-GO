@@ -1,78 +1,106 @@
-// BWM-MD WhatsApp Bot - Complete Working Version
+// BWM-MD WhatsApp Bot - Final Working Configuration
 const fs = require('fs-extra');
 const path = require('path');
 const express = require('express');
-const { Client } = require('whatsapp-web.js'); // Make sure to install
 
 // 1. Initialize Express for Render
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Health endpoint
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// 2. WhatsApp Client Configuration
-const client = new Client({
-    session: require('./session.json'), // Your session file
-    puppeteer: { 
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    }
-});
-
-// 3. Bio Rotation System
-class BioManager {
+// 2. Simplified Config Manager (Fixed Error)
+class ConfigManager {
     constructor() {
+        this.configPath = path.join(__dirname, 'config', 'settings.json');
+        this.settings = {};
+        this.initialize();
+    }
+
+    initialize() {
+        try {
+            fs.ensureDirSync(path.join(__dirname, 'config'));
+            
+            if (fs.existsSync(this.configPath)) {
+                this.settings = fs.readJsonSync(this.configPath);
+            } else {
+                this.settings = {
+                    AUTO_BIO: 'yes',
+                    PRESENCE: '🚀 BWM-MD Online'
+                };
+                this.save();
+            }
+        } catch (error) {
+            console.error('Config Error:', error);
+            this.settings = {};
+        }
+    }
+
+    save() {
+        try {
+            fs.writeJsonSync(this.configPath, this.settings);
+        } catch (error) {
+            console.error('Save Error:', error);
+        }
+    }
+
+    set(key, value) {
+        this.settings[key] = value;
+        this.save();
+    }
+
+    get(key, defaultValue = '') {
+        return this.settings[key] || defaultValue;
+    }
+}
+
+// 3. Working Bio Rotator (Fixed Error)
+class BioRotator {
+    constructor(config) {
+        this.config = config;
         this.quotes = [
             "🚀 BWM-MD Connected",
             "💡 Smart WhatsApp Assistant",
-            "✨ Always Available"
+            "✨ Always Available",
+            "🌟 Premium Service"
         ];
-        setInterval(() => this.updateBio(), 60000);
+        this.updateBio(); // Initial update
+        setInterval(() => this.updateBio(), 60000); // 60s rotation
     }
 
-    async updateBio() {
+    updateBio() {
         try {
-            const status = this.quotes[Math.floor(Math.random() * this.quotes.length)];
-            await client.setStatus(status);
-            console.log('✓ Bio updated:', status);
+            const quote = this.quotes[Math.floor(Math.random() * this.quotes.length)];
+            this.config.set('PRESENCE', quote);
+            console.log('✓ Bio updated:', quote);
         } catch (error) {
-            console.error('⚠️ Bio update failed:', error.message);
+            console.error('Bio Error:', error);
         }
     }
 }
 
-// 4. WhatsApp Client Events
-client.on('qr', (qr) => {
-    console.log('QR RECEIVED', qr);
-    // Implement QR handling (save to file or display)
+// 4. Initialize Systems
+const config = new ConfigManager();
+const bioRotator = new BioRotator(config);
+
+// 5. Start Express Server
+app.listen(PORT, () => {
+    console.log(`✓ Server running on port ${PORT}`);
+    console.log('✓ Bio rotation active');
 });
 
-client.on('ready', () => {
-    console.log('✓ Client is ready!');
-    new BioManager(); // Start bio rotation
+// 6. Export Configuration
+module.exports = {
+    config,
+    get ETAT() {
+        return config.get('PRESENCE');
+    },
+    PREFIX: process.env.PREFIX || ".",
+    BOT: process.env.BOT_NAME || 'BWM-MD',
+    PORT
+};
+
+// Handle shutdown
+process.on('SIGTERM', () => {
+    console.log('Shutting down gracefully');
+    process.exit(0);
 });
-
-client.on('message', msg => {
-    // Add your message handling logic here
-    console.log('Message received:', msg.body);
-});
-
-// 5. Start Services
-(async () => {
-    try {
-        // Start Express server
-        app.listen(PORT, () => console.log(`✓ Server running on ${PORT}`));
-        
-        // Initialize WhatsApp client
-        await client.initialize();
-        console.log('✓ WhatsApp client initializing...');
-        
-    } catch (error) {
-        console.error('⚠️ Startup failed:', error);
-        process.exit(1);
-    }
-})();
-
-// Export for testing
-module.exports = { client, app };
