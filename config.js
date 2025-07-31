@@ -1,8 +1,5 @@
-// BWM-MD WhatsApp Bot Configuration
-// Enhanced with automatic bio rotation every 60 seconds
-
+// BWM-MD WhatsApp Bot Configuration - Stable Version
 const fs = require('fs-extra');
-const { Sequelize } = require('sequelize');
 const path = require('path');
 
 // Load environment variables
@@ -10,135 +7,145 @@ if (fs.existsSync('config.env')) {
     require('dotenv').config({ path: __dirname + '/config.env' });
 }
 
-// Database configuration
-const databasePath = path.join(__dirname, './database.db');
-const DATABASE_URL = process.env.DATABASE_URL || databasePath;
-
-// Fetch polyfill for restart functionality
-let fetch;
-try {
-    fetch = globalThis.fetch || require('node-fetch');
-} catch (error) {
-    console.log('⚠️ Fetch not available, using alternative restart methods');
-    fetch = null;
-}
-
-// Configuration Manager
-class HybridConfigManager {
+// Improved Configuration Manager
+class ConfigManager {
     constructor() {
-        // Session ID generator (moved to top of constructor)
-        this.generateSessionId = () => {
-            return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        };
-
-        this.sessionId = this.generateSessionId();
         this.configDir = path.join(__dirname, 'config');
         this.configFile = path.join(this.configDir, 'settings.json');
         this.backupDir = path.join(this.configDir, 'backups');
         this.cache = new Map();
-        this.isHerokuAvailable = false;
         
-        this.initializeStorage();
-    }
-
-    initializeStorage() {
+        // Initialize with error handling
         try {
-            fs.ensureDirSync(this.configDir);
-            fs.ensureDirSync(this.backupDir);
-            
-            if (!fs.existsSync(this.configFile)) {
-                this.createDefaultConfig();
-            }
-            
-            this.loadConfigToCache();
-            console.log('✅ Config manager initialized');
+            this.initializeStorage();
+            console.log('✓ Config system ready');
         } catch (error) {
-            console.error('❌ Config initialization failed:', error);
+            console.error('⚠️ Config initialization failed:', error.message);
+            process.exit(1);
         }
     }
 
-    createDefaultConfig() {
-        const defaultConfig = {
-            metadata: {
-                version: '1.0.0',
-                created: new Date().toISOString(),
-                sessionId: this.sessionId
-            },
-            settings: {
-                AUTO_BIO: 'yes',
-                PRESENCE: '🚀 BWM-MD Online'
-                // Other default settings...
-            }
-        };
-        fs.writeFileSync(this.configFile, JSON.stringify(defaultConfig, null, 2));
+    initializeStorage() {
+        // Ensure directories exist
+        fs.ensureDirSync(this.configDir);
+        fs.ensureDirSync(this.backupDir);
+
+        // Create default config if missing
+        if (!fs.existsSync(this.configFile)) {
+            fs.writeFileSync(this.configFile, JSON.stringify({
+                settings: {
+                    AUTO_BIO: 'yes',
+                    PRESENCE: '🚀 BWM-MD Online'
+                }
+            }, null, 2));
+        }
+
+        // Load config
+        this.loadConfig();
     }
 
-    // ... [Other existing methods remain unchanged] ...
+    loadConfig() {
+        try {
+            const config = fs.readJsonSync(this.configFile);
+            this.cache = new Map(Object.entries(config.settings || {}));
+        } catch (error) {
+            console.error('⚠️ Config load failed:', error.message);
+            this.cache = new Map();
+        }
+    }
+
+    async setSetting(key, value) {
+        this.cache.set(key, value);
+        await this.saveConfig();
+        return true;
+    }
+
+    async saveConfig() {
+        try {
+            const config = {
+                settings: Object.fromEntries(this.cache)
+            };
+            await fs.writeJson(this.configFile, config, { spaces: 2 });
+        } catch (error) {
+            console.error('⚠️ Config save failed:', error.message);
+        }
+    }
+
+    getSetting(key, defaultValue = '') {
+        return this.cache.get(key) || defaultValue;
+    }
 }
 
-// Bio Rotation System
+// Robust Bio Rotator
 class BioRotator {
-    constructor(configManager) {
-        this.config = configManager;
+    constructor(config) {
+        this.config = config;
         this.quotes = [
-            "🚀 Powered by BWM-MD",
-            "💡 Innovation at work",
-            "✨ Your digital assistant",
-            "🌟 Always online",
-            "⏳ 24/7 availability",
-            "📱 Connected with you",
-            "🤖 AI-powered responses",
-            "⚡ Lightning fast service"
+            "🚀 BWM-MD Connected",
+            "💡 Smart WhatsApp Assistant",
+            "✨ Always Available",
+            "🌟 Premium Service",
+            "⏳ Instant Responses",
+            "📱 Message Anytime",
+            "🤖 AI-Powered Features",
+            "⚡ Blazing Fast"
         ];
-        this.updateInterval = 60000; // 60 seconds
+        this.interval = 60000; // 60 seconds
         
-        // Start rotation
-        this.updateBio();
-        this.rotationTimer = setInterval(() => this.updateBio(), this.updateInterval);
+        // Start with error handling
+        this.startRotation().catch(console.error);
+    }
+
+    async startRotation() {
+        try {
+            // Initial update
+            await this.updateBio();
+            
+            // Set up regular rotation
+            this.rotationTimer = setInterval(() => {
+                this.updateBio().catch(console.error);
+            }, this.interval);
+        } catch (error) {
+            console.error('⚠️ Rotation setup failed:', error.message);
+        }
     }
 
     async updateBio() {
         try {
-            const randomIndex = Math.floor(Math.random() * this.quotes.length);
-            const newBio = this.quotes[randomIndex];
-            await this.config.setSetting('PRESENCE', newBio);
-            console.log(`🔄 Bio rotated to: "${newBio}"`);
+            const randomQuote = this.quotes[Math.floor(Math.random() * this.quotes.length)];
+            await this.config.setSetting('PRESENCE', randomQuote);
+            console.log(`✓ Bio updated: ${randomQuote}`);
         } catch (error) {
-            console.error('⚠️ Bio rotation failed:', error.message);
+            console.error('⚠️ Bio update failed:', error.message);
         }
     }
 }
 
-// Initialize components
-const hybridConfig = new HybridConfigManager();
-const bioRotator = new BioRotator(hybridConfig);
+// Initialize systems
+const configManager = new ConfigManager();
+const bioRotator = new BioRotator(configManager);
 
-// Module exports
+// Export configuration
 module.exports = {
-    hybridConfig,
-    session: process.env.SESSION_ID || '',
-    sessionId: hybridConfig.sessionId,
+    configManager,
+    get ETAT() {
+        return configManager.getSetting('PRESENCE', '🚀 BWM-MD Online');
+    },
     PREFIX: process.env.PREFIX || ".",
     BOT: process.env.BOT_NAME || 'BWM-MD',
     
-    // Bio rotation integration
-    get ETAT() {
-        return hybridConfig.getSetting('PRESENCE', '🚀 BWM-MD Online');
-    },
-    
-    // ... [Other existing exports] ...
-    
-    DATABASE_URL,
-    DATABASE: DATABASE_URL === databasePath
-        ? "postgresql://postgres:password@localhost:5432/bwm_md"
-        : DATABASE_URL
+    // Watch for file changes
+    watchConfig: () => {
+        const configFile = path.join(__dirname, 'config.js');
+        fs.watchFile(configFile, () => {
+            console.log('♻️ Reloading configuration...');
+            delete require.cache[require.resolve(configFile)];
+            process.exit(0);
+        });
+    }
 };
 
-// File watcher
-let fichier = require.resolve(__filename);
-fs.watchFile(fichier, () => {
-    fs.unwatchFile(fichier);
-    console.log(`♻️ Reloading ${__filename}`);
-    delete require.cache[fichier];
-    require(fichier);
-});
+// Start file watcher if not in production
+if (process.env.NODE_ENV !== 'production') {
+    module.exports.watchConfig();
+}
