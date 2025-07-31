@@ -1,106 +1,92 @@
-// BWM-MD WhatsApp Bot - Final Working Configuration
+// Bwm xmd by Ibrahim Adams - URL Safe Version
 const fs = require('fs-extra');
+const { Sequelize } = require('sequelize');
+const crypto = require('crypto');
 const path = require('path');
-const express = require('express');
+const { URL } = require('url'); // Added for URL validation
 
-// 1. Initialize Express for Render
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/health', (req, res) => res.status(200).send('OK'));
+if (fs.existsSync('config.env')) {
+    require('dotenv').config({ path: __dirname + '/config.env' });
+}
 
-// 2. Simplified Config Manager (Fixed Error)
-class ConfigManager {
-    constructor() {
-        this.configPath = path.join(__dirname, 'config', 'settings.json');
-        this.settings = {};
-        this.initialize();
-    }
-
-    initialize() {
-        try {
-            fs.ensureDirSync(path.join(__dirname, 'config'));
-            
-            if (fs.existsSync(this.configPath)) {
-                this.settings = fs.readJsonSync(this.configPath);
-            } else {
-                this.settings = {
-                    AUTO_BIO: 'yes',
-                    PRESENCE: '🚀 BWM-MD Online'
-                };
-                this.save();
-            }
-        } catch (error) {
-            console.error('Config Error:', error);
-            this.settings = {};
-        }
-    }
-
-    save() {
-        try {
-            fs.writeJsonSync(this.configPath, this.settings);
-        } catch (error) {
-            console.error('Save Error:', error);
-        }
-    }
-
-    set(key, value) {
-        this.settings[key] = value;
-        this.save();
-    }
-
-    get(key, defaultValue = '') {
-        return this.settings[key] || defaultValue;
+// URL Validation Helper
+function isValidUrl(string) {
+    try {
+        new URL(string);
+        return true;
+    } catch (_) {
+        return false; 
     }
 }
 
-// 3. Working Bio Rotator (Fixed Error)
-class BioRotator {
-    constructor(config) {
-        this.config = config;
-        this.quotes = [
-            "🚀 BWM-MD Connected",
-            "💡 Smart WhatsApp Assistant",
-            "✨ Always Available",
-            "🌟 Premium Service"
-        ];
-        this.updateBio(); // Initial update
-        setInterval(() => this.updateBio(), 60000); // 60s rotation
-    }
+// Safe Database URL Handling
+const databasePath = path.join(__dirname, './database.db');
+let DATABASE_URL = databasePath;
 
-    updateBio() {
-        try {
-            const quote = this.quotes[Math.floor(Math.random() * this.quotes.length)];
-            this.config.set('PRESENCE', quote);
-            console.log('✓ Bio updated:', quote);
-        } catch (error) {
-            console.error('Bio Error:', error);
-        }
-    }
+if (process.env.DATABASE_URL && isValidUrl(process.env.DATABASE_URL)) {
+    DATABASE_URL = process.env.DATABASE_URL;
+} else if (process.env.DATABASE_URL) {
+    console.warn('⚠️ Invalid DATABASE_URL in environment, falling back to local SQLite');
 }
 
-// 4. Initialize Systems
-const config = new ConfigManager();
-const bioRotator = new BioRotator(config);
+// Add fetch support for restart functionality
+let fetch;
+try {
+    fetch = globalThis.fetch || require('node-fetch');
+} catch (error) {
+    console.log('⚠️ Fetch not available, will use alternative restart methods');
+    fetch = null;
+}
 
-// 5. Start Express Server
-app.listen(PORT, () => {
-    console.log(`✓ Server running on port ${PORT}`);
-    console.log('✓ Bio rotation active');
-});
+// HYBRID CONFIGURATION MANAGER (Keep original class implementation)
+class HybridConfigManager {
+    // ... [Keep all your original HybridConfigManager code exactly as is] ...
+}
 
-// 6. Export Configuration
+const hybridConfig = new HybridConfigManager();
+
+// Safe URL handling for all external URLs
+const DEFAULT_CHANNEL = 'https://whatsapp.com';
+const DEFAULT_IMAGES = [
+    'https://res.cloudinary.com/dptzpfgtm/image/upload/v1748879883/whatsapp_uploads/e3eprzkzxhwfx7pmemr5.jpg',
+    'https://res.cloudinary.com/dptzpfgtm/image/upload/v1748879901/whatsapp_uploads/hqagxk84idvf899rhpfj.jpg',
+    'https://res.cloudinary.com/dptzpfgtm/image/upload/v1748879921/whatsapp_uploads/bms318aehnllm6sfdgql.jpg'
+].filter(url => isValidUrl(url));
+
 module.exports = {
-    config,
-    get ETAT() {
-        return config.get('PRESENCE');
-    },
+    hybridConfig,
+    session: process.env.SESSION_ID || '',
+    sessionId: hybridConfig.getSessionId(),
     PREFIX: process.env.PREFIX || ".",
-    BOT: process.env.BOT_NAME || 'BWM-MD',
-    PORT
+    
+    // Safe URL handling
+    GURL: process.env.CHANNEL_URL && isValidUrl(process.env.CHANNEL_URL) 
+        ? process.env.CHANNEL_URL 
+        : DEFAULT_CHANNEL,
+    
+    BOT_URL: process.env.BOT_URL 
+        ? process.env.BOT_URL.split(',').filter(url => isValidUrl(url))
+        : DEFAULT_IMAGES,
+    
+    // Database configuration
+    DATABASE_URL,
+    DATABASE: isValidUrl(DATABASE_URL) 
+        ? DATABASE_URL 
+        : "sqlite:" + databasePath,
+    
+    // ... [Keep all other original exports exactly as is] ...
+    
+    // Original footer and other settings
+    FOOTER: process.env.BOT_FOOTER || '\n\nFor more info visit: bwmxmd.online\n\n®2025 ʙᴡᴍ xᴍᴅ 🔥',
+    
+    // ... [Rest of your existing exports] ...
 };
 
-// Handle shutdown
-process.on('SIGTERM', () => {
-    console.log('Shutting down gracefully');
-    process.exit(0);
+// File watcher
+let fichier = require.resolve(__filename);
+fs.watchFile(fichier, () => {
+    fs.unwatchFile(fichier);
+    console.log(`Updates ${__filename}`);
+    delete require.cache[fichier];
+    require(fichier);
 });
