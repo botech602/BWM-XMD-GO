@@ -1,13 +1,21 @@
 // BWM-MD WhatsApp Bot Configuration - Stable Version
+// Includes automatic bio rotation every 60 seconds
+// Fully compatible with Render.com deployment
+
 const fs = require('fs-extra');
 const path = require('path');
+const express = require('express'); // Added for Render.com compatibility
 
 // Load environment variables
 if (fs.existsSync('config.env')) {
     require('dotenv').config({ path: __dirname + '/config.env' });
 }
 
-// Improved Configuration Manager
+// Create Express app for Render.com health checks
+const app = express();
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// Enhanced Configuration Manager
 class ConfigManager {
     constructor() {
         this.configDir = path.join(__dirname, 'config');
@@ -15,33 +23,32 @@ class ConfigManager {
         this.backupDir = path.join(this.configDir, 'backups');
         this.cache = new Map();
         
-        // Initialize with error handling
+        this.initializeStorage();
+    }
+
+    initializeStorage() {
         try {
-            this.initializeStorage();
-            console.log('✓ Config system ready');
+            // Ensure directories exist
+            fs.ensureDirSync(this.configDir);
+            fs.ensureDirSync(this.backupDir);
+
+            // Create default config if missing
+            if (!fs.existsSync(this.configFile)) {
+                fs.writeFileSync(this.configFile, JSON.stringify({
+                    settings: {
+                        AUTO_BIO: 'yes',
+                        PRESENCE: '🚀 BWM-MD Online'
+                    }
+                }, null, 2));
+            }
+
+            // Load existing config
+            this.loadConfig();
+            console.log('✓ Configuration system ready');
         } catch (error) {
             console.error('⚠️ Config initialization failed:', error.message);
             process.exit(1);
         }
-    }
-
-    initializeStorage() {
-        // Ensure directories exist
-        fs.ensureDirSync(this.configDir);
-        fs.ensureDirSync(this.backupDir);
-
-        // Create default config if missing
-        if (!fs.existsSync(this.configFile)) {
-            fs.writeFileSync(this.configFile, JSON.stringify({
-                settings: {
-                    AUTO_BIO: 'yes',
-                    PRESENCE: '🚀 BWM-MD Online'
-                }
-            }, null, 2));
-        }
-
-        // Load config
-        this.loadConfig();
     }
 
     loadConfig() {
@@ -62,10 +69,9 @@ class ConfigManager {
 
     async saveConfig() {
         try {
-            const config = {
+            await fs.writeJson(this.configFile, {
                 settings: Object.fromEntries(this.cache)
-            };
-            await fs.writeJson(this.configFile, config, { spaces: 2 });
+            }, { spaces: 2 });
         } catch (error) {
             console.error('⚠️ Config save failed:', error.message);
         }
@@ -76,7 +82,7 @@ class ConfigManager {
     }
 }
 
-// Robust Bio Rotator
+// Robust Bio Rotation System
 class BioRotator {
     constructor(config) {
         this.config = config;
@@ -92,22 +98,17 @@ class BioRotator {
         ];
         this.interval = 60000; // 60 seconds
         
-        // Start with error handling
         this.startRotation().catch(console.error);
     }
 
     async startRotation() {
-        try {
-            // Initial update
-            await this.updateBio();
-            
-            // Set up regular rotation
-            this.rotationTimer = setInterval(() => {
-                this.updateBio().catch(console.error);
-            }, this.interval);
-        } catch (error) {
-            console.error('⚠️ Rotation setup failed:', error.message);
-        }
+        // Initial update
+        await this.updateBio();
+        
+        // Set up regular rotation
+        this.rotationTimer = setInterval(() => {
+            this.updateBio().catch(console.error);
+        }, this.interval);
     }
 
     async updateBio() {
@@ -125,27 +126,40 @@ class BioRotator {
 const configManager = new ConfigManager();
 const bioRotator = new BioRotator(configManager);
 
+// Start Express server for Render.com
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`✓ Server listening on port ${PORT}`);
+});
+
 // Export configuration
 module.exports = {
     configManager,
+    bioRotator,
+    PORT, // Export PORT for other files if needed
+    
     get ETAT() {
         return configManager.getSetting('PRESENCE', '🚀 BWM-MD Online');
     },
+    
     PREFIX: process.env.PREFIX || ".",
     BOT: process.env.BOT_NAME || 'BWM-MD',
+    SESSION_ID: process.env.SESSION_ID || '',
     
-    // Watch for file changes
+    // Watch for file changes in development
     watchConfig: () => {
-        const configFile = path.join(__dirname, 'config.js');
-        fs.watchFile(configFile, () => {
-            console.log('♻️ Reloading configuration...');
-            delete require.cache[require.resolve(configFile)];
-            process.exit(0);
-        });
+        if (process.env.NODE_ENV !== 'production') {
+            const configFile = path.join(__dirname, 'config.js');
+            fs.watchFile(configFile, () => {
+                console.log('♻️ Reloading configuration...');
+                delete require.cache[require.resolve(configFile)];
+                process.exit(1); // Restart process
+            });
+        }
     }
 };
 
-// Start file watcher if not in production
+// Start file watcher if in development mode
 if (process.env.NODE_ENV !== 'production') {
     module.exports.watchConfig();
 }
